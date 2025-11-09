@@ -1,0 +1,83 @@
+# ==========================================
+# Maven
+# ==========================================
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# ==========================================
+# Compiled Files
+# ==========================================
+*.class
+*.jar
+*.war
+*.ear
+
+# ==========================================
+# Logs
+# ==========================================
+*.log
+logs/
+applitools-logs/
+
+# ==========================================
+# Test Reports
+# ==========================================
+reports/
+test-output/
+ExtentReports/
+
+# ==========================================
+# IDE Files
+# ==========================================
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+*.swp
+*.swo
+*~
+
+# ==========================================
+# OS Files
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Selenium
+# ==========================================
+chromedriver.exe
+chromedriver
+geckodriver
+geckodriver.exe
+
+# ==========================================
+# Temporary Files
+# ==========================================
+*.tmp
+*.temp
+screenshots/
+temp/
+
+# ==========================================
+# SENSITIVE - Do NOT commit these!
+# ==========================================
+# config.properties files contain API keys
+# We'll create a template instead
+src/main/resources/config.properties
+src/test/resources/config.properties
+
+# Backup files
+*.bak
+*.backup

@@ -1,0 +1,193 @@
+# ============================================================
+# GitLab CI/CD Pipeline - Figma Visual Testing
+# Report Generation & Artifact Storage
+# ============================================================
+
+stages:
+  - build
+  - test
+  - report
+
+# Variables
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
+  
+# Cache Maven dependencies
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .m2/repository/
+    - target/
+
+# Docker image with Java 21 & Maven
+image: maven:3.9-eclipse-temurin-21
+
+# ============================================================
+# STAGE 1: BUILD
+# ============================================================
+build:
+  stage: build
+  script:
+    - echo "=========================================="
+    - echo "🔨 BUILDING PROJECT"
+    - echo "=========================================="
+    - mvn $MAVEN_CLI_OPTS clean compile
+    - echo "✅ Build completed successfully"
+  artifacts:
+    expire_in: 1 hour
+    paths:
+      - target/classes/
+  only:
+    - main
+    - develop
+    - merge_requests
+    - schedules
+  tags:
+    - docker
+
+# ============================================================
+# STAGE 2: RUN TESTS
+# ============================================================
+run_visual_tests:
+  stage: test
+  script:
+    - echo "=========================================="
+    - echo "🧪 RUNNING FIGMA VISUAL TESTS"
+    - echo "=========================================="
+    - echo ""
+    - echo "📋 Configuration:"
+    - echo "   Figma API: Configured via environment variable"
+    - echo "   Applitools: Configured via environment variable"
+    - echo "   Test Suite: testng.xml"
+    - echo "   Browser: Chrome (Headless)"
+    - echo ""
+    - echo "🚀 Starting test execution..."
+    - echo ""
+    - mvn $MAVEN_CLI_OPTS test
+    - echo ""
+    - echo "=========================================="
+    - echo "✅ TEST EXECUTION COMPLETED"
+    - echo "=========================================="
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - target/surefire-reports/
+      - reports/
+      - test-output/
+      - screenshots/
+    reports:
+      junit:
+        - target/surefire-reports/TEST-*.xml
+  dependencies:
+    - build
+  only:
+    - main
+    - develop
+    - merge_requests
+    - schedules
+  tags:
+    - docker
+  allow_failure: false
+
+# ============================================================
+# STAGE 3: GENERATE & PUBLISH REPORTS
+# ============================================================
+generate_reports:
+  stage: report
+  script:
+    - echo "=========================================="
+    - echo "📊 GENERATING TEST REPORTS"
+    - echo "=========================================="
+    - echo ""
+    - echo "📁 Report files generated:"
+    - ls -lh reports/ || echo "No reports directory found"
+    - echo ""
+    - echo "📈 Test Results Summary:"
+    - |
+      if [ -f "target/surefire-reports/testng-results.xml" ]; then
+        echo ""
+        echo "   TestNG Results:"
+        TOTAL=$(grep -oP 'total="\K[^"]+' target/surefire-reports/testng-results.xml | head -1)
+        PASSED=$(grep -oP 'passed="\K[^"]+' target/surefire-reports/testng-results.xml | head -1)
+        FAILED=$(grep -oP 'failed="\K[^"]+' target/surefire-reports/testng-results.xml | head -1)
+        SKIPPED=$(grep -oP 'skipped="\K[^"]+' target/surefire-reports/testng-results.xml | head -1)
+        echo "   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "   📊 Total:   $TOTAL"
+        echo "   ✅ Passed:  $PASSED"
+        echo "   ❌ Failed:  $FAILED"
+        echo "   ⏭️  Skipped: $SKIPPED"
+        echo "   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        if [ "$FAILED" -gt 0 ]; then
+          echo "   ⚠️  Some tests failed. Review the report for details."
+        else
+          echo "   🎉 All tests passed successfully!"
+        fi
+      else
+        echo "   ⚠️  TestNG results file not found"
+      fi
+    - echo ""
+    - echo "=========================================="
+    - echo "📄 REPORTS LOCATION:"
+    - echo "   ExtentReport: reports/FigmaVisualTest_*.html"
+    - echo "   TestNG: target/surefire-reports/"
+    - echo ""
+    - echo "📥 Download reports from:"
+    - echo "   CI/CD → Pipelines → This Pipeline → Browse Artifacts"
+    - echo "=========================================="
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - reports/
+      - target/surefire-reports/
+  dependencies:
+    - run_visual_tests
+  only:
+    - main
+    - develop
+    - merge_requests
+    - schedules
+  tags:
+    - docker
+
+# ============================================================
+# OPTIONAL: GitLab Pages (Public Report Hosting)
+# Uncomment below to publish reports to GitLab Pages
+# Access at: https://[username].gitlab.io/[project-name]
+# ============================================================
+
+pages:
+  stage: report
+  script:
+    - echo "=========================================="
+    - echo "📄 PUBLISHING TO GITLAB PAGES"
+    - echo "=========================================="
+    - mkdir -p public
+    - cp -r reports/* public/ 2>/dev/null || echo "No reports to publish"
+    - cp -r target/surefire-reports/* public/ 2>/dev/null || echo "No surefire reports"
+    - echo "<html><head><meta http-equiv='refresh' content='0; url=FigmaVisualTest.html'/></head></html>" > public/index.html 2>/dev/null || true
+    - echo "✅ Reports published to GitLab Pages"
+    - echo "🔗 Access at: https://[your-username].gitlab.io/[project-name]"
+  artifacts:
+    paths:
+      - public
+  dependencies:
+    - generate_reports
+  only:
+    - main
+  tags:
+    - docker
+
+# ============================================================
+# SCHEDULED PIPELINE CONFIGURATION
+# ============================================================
+# To set up scheduled runs:
+# 1. Go to: CI/CD → Schedules → New Schedule
+# 2. Description: "Daily Figma Visual Testing"
+# 3. Interval: Custom (0 30 3 * * *) = 9:00 AM IST
+# 4. Target Branch: main
+# 5. Active: Yes
+# ============================================================

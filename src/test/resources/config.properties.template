@@ -1,0 +1,31 @@
+# ==========================================
+# Applitools Configuration
+# ==========================================
+applitools.api.key=YOUR_APPLITOOLS_API_KEY_HERE
+applitools.server.url=https://eyes.applitools.com
+
+# ==========================================
+# Proxy Configuration (optional)
+# ==========================================
+proxy.url=
+proxy.port=
+proxy.username=
+proxy.password=
+
+# ==========================================
+# Figma Configuration
+# ==========================================
+figma.apiToken=YOUR_FIGMA_TOKEN_HERE
+
+# ==========================================
+# Browser Configuration
+# ==========================================
+browser=chrome
+headless=false
+implicit.wait=10
+explicit.wait=30
+
+# ==========================================
+# Test Data
+# ==========================================
+test.data.path=src/test/resources/testdata/testdata.xlsx

@@ -1,110 +1,142 @@
-# Figma to Applitools Visual Testing Framework
+# Figma Applitools Visual Testing Framework
 
-## 🎯 Overview
-Automated visual regression testing framework that compares Figma designs with live websites using Applitools Eyes and Selenium.
+Automated visual testing framework that compares Figma designs with live website implementations using Applitools Eyes and Selenium.
 
-## 🏗️ Architecture
-- **Figma API**: Fetches design screenshots
-- **Selenium WebDriver**: Captures live website screenshots  
-- **Applitools Eyes**: Compares and reports visual differences
-- **TestNG**: Test execution framework
-- **Excel**: Test data management
+## 🎯 Features
 
-## 📋 Prerequisites
-- Java 21+
-- Maven 3.8+
-- Chrome Browser
-- Applitools Account
-- Figma Access Token
+- 📸 Upload Figma designs as baselines to Applitools
+- 🌐 Capture website screenshots using Selenium WebDriver
+- ✅ Visual comparison between Figma designs and website
+- 📊 Excel-driven test data management
+- 🎨 Support for multiple viewports and match levels
+- 📋 Comprehensive test reporting
+
+## 🛠️ Tech Stack
+
+- **Java 21**
+- **Selenium WebDriver** - Browser automation
+- **Applitools Eyes SDK** - Visual testing
+- **TestNG** - Test framework
+- **Apache POI** - Excel data handling
+- **Maven** - Build management
+
+## 📂 Project Structure
+```
+figma-applitools-selenium/
+├── src/main/java/com/bajajfinserv/
+│   └── utils/
+│       ├── ApplitoolsManager.java
+│       ├── DriverManager.java
+│       ├── FigmaAPIClient.java
+│       └── ExcelDataProvider.java
+├── src/test/java/com/bajajfinserv/
+│   ├── tests/
+│   │   ├── BaseTest.java
+│   │   └── FigmaComparisonTest.java
+│   ├── listeners/
+│   │   ├── TestListener.java
+│   │   └── ExtentManager.java
+│   └── utils/
+│       └── ExcelDataProviderMain.java
+├── src/test/resources/
+│   ├── testdata.xlsx
+│   └── testng.xml
+└── pom.xml
+```
 
 ## ⚙️ Setup
 
-### 1. Clone Repository
+### Prerequisites
+
+- Java 21 or higher
+- Maven 3.6+
+- Chrome browser
+
+### Installation
+
+1. **Clone the repository:**
 ```bash
-git clone <your-repo-url>
-cd figma-applitools-selenium
+   git clone https://github.com/star-dust96/figma-applitools-selenium.git
+   cd figma-applitools-selenium
 ```
 
-### 2. Configure API Keys
+2. **Install dependencies:**
 ```bash
-# Copy template
-cp src/main/resources/config.properties.template src/main/resources/config.properties
-cp src/test/resources/config.properties.template src/test/resources/config.properties
-
-# Edit and add your keys
-nano src/main/resources/config.properties
+   mvn clean install
 ```
 
-Add your credentials:
-- `applitools.api.key`: Get from https://eyes.applitools.com
-- `figma.apiToken`: Get from Figma Settings → Personal Access Tokens
-
-### 3. Install Dependencies
-```bash
-mvn clean install
+3. **Configure API keys:**
+   
+   Create `src/main/resources/config.properties`:
+```properties
+   APPLITOOLS_API_KEY=your_applitools_api_key_here
+   FIGMA_ACCESS_TOKEN=your_figma_access_token_here
 ```
+
+4. **Update test data:**
+   - Edit: `src/test/resources/testdata.xlsx`
+   - Configure TestCases and TestSteps sheets
 
 ## 🚀 Running Tests
 
-### Run All Tests
+### Phase 1: Upload Figma Baselines
+
+Set `uploadBaseline=TRUE` in Excel, then run:
 ```bash
 mvn clean test
 ```
 
-### Run Specific Test
+### Phase 2: Compare Website vs Baselines
+
+Set `uploadBaseline=FALSE` in Excel, then run:
 ```bash
-mvn test -Dtest=FigmaComparisonTest
+mvn clean test
 ```
 
-## 📊 Test Data
-Edit test cases in: `src/test/resources/testdata/testdata.xlsx`
+## 📊 Test Data Configuration
 
-**Sheets:**
-- **TestCases**: Main test definitions
-- **TestSteps**: Step-by-step actions for each test
+### TestCases Sheet
 
-## 📁 Project Structure
-```
-figma-applitools-selenium/
-├── src/
-│   ├── main/
-│   │   ├── java/com/bajajfinserv/
-│   │   │   ├── config/         # Configuration readers
-│   │   │   ├── reports/        # Extent Reports
-│   │   │   └── utils/          # Utilities (Figma, Applitools, Driver)
-│   │   └── resources/
-│   │       └── config.properties.template
-│   └── test/
-│       ├── java/com/bajajfinserv/tests/
-│       │   ├── BaseTest.java
-│       │   └── FigmaComparisonTest.java
-│       └── resources/
-│           ├── config.properties.template
-│           ├── testdata/testdata.xlsx
-│           └── testng.xml
-├── pom.xml
-└── README.md
-```
+| Column | Description |
+|--------|-------------|
+| testName | Unique test identifier |
+| figmaUrl | Figma design URL with node-id |
+| appUrl | Website URL to test |
+| viewport | Browser dimensions (e.g., 375x740) |
+| matchLevel | STRICT, LAYOUT, CONTENT, or EXACT |
+| uploadBaseline | TRUE/FALSE - Upload Figma or compare |
+| enabled | TRUE/FALSE - Run this test |
 
-## 🐛 Troubleshooting
+### TestSteps Sheet
 
-### Issue: Zscaler Blocking Uploads
-**Solution:** Run on non-enterprise network or request IT to whitelist:
-- `*.applitools.com`
-- `eyesapi.applitools.com`
-- `ufg-wus.applitools.com`
+| Column | Description |
+|--------|-------------|
+| testName | Links to TestCases |
+| stepOrder | Execution sequence |
+| action | NAVIGATE, WAIT, CLICK, SCROLL, etc. |
+| locator | Element selector (CSS/XPath) |
+| checkpointName | Screenshot name in Applitools |
+| waitSeconds | Delay duration |
 
-### Issue: Tests Not Executing
-**Solution:** Check Excel for:
-- Proper action names (case-sensitive)
-- Valid step orders
-- Correct locators
+## 📈 Reports
 
-## 📸 Viewing Results
-Dashboard: https://eyes.applitools.com
+- **Test reports:** `test-output/Figma-Visual-Testing-Report-[timestamp].html`
+- **Applitools Dashboard:** https://eyes.applitools.com
 
-## 👥 Team
-DCX QA Team - Bajaj Finserv
+## 🔒 Security
 
-## 📄 License
-Internal Use Only
+- Never commit `config.properties` files
+- Keep API keys secure
+- Use `.gitignore` to protect sensitive data
+
+## 👥 Contributing
+
+This is a private project for Bajaj Finserv DCX team.
+
+## 📝 License
+
+Private - Bajaj Finserv
+
+---
+
+**Developed by QA Team - DCX**

@@ -13,10 +13,11 @@ public class ApplitoolsManager {
     private static BatchInfo sharedBatch;
     private static VisualGridRunner runner;
     
+    // For Selenium Eyes (Website screenshots)
     public static Eyes getEyes(String matchLevel, String uploadBaseline, BatchInfo batch) {
         Eyes eyes = new Eyes(getRunner());
-        
         Configuration config = new Configuration();
+        
         config.setApiKey(ConfigReader.getProperty("applitools.api.key"));
         config.setServerUrl(ConfigReader.getProperty("applitools.server.url"));
         config.setBatch(batch);
@@ -34,6 +35,28 @@ public class ApplitoolsManager {
         
         eyes.setConfiguration(config);
         return eyes;
+    }
+    
+    // ⭐ NEW: For Images Eyes (Figma image upload)
+    public static com.applitools.eyes.images.Eyes getImagesEyes(String matchLevel, BatchInfo batch) {
+        com.applitools.eyes.images.Eyes imagesEyes = new com.applitools.eyes.images.Eyes();
+        
+        // Set properties directly on the Eyes instance
+        imagesEyes.setApiKey(ConfigReader.getProperty("applitools.api.key"));
+        imagesEyes.setServerUrl(ConfigReader.getProperty("applitools.server.url"));
+        imagesEyes.setBatch(batch);
+        
+        // Set match level
+        MatchLevel level;
+        switch (matchLevel.toUpperCase()) {
+            case "STRICT": level = MatchLevel.STRICT; break;
+            case "CONTENT": level = MatchLevel.CONTENT; break;
+            case "LAYOUT": level = MatchLevel.LAYOUT; break;
+            default: level = MatchLevel.STRICT;
+        }
+        imagesEyes.setMatchLevel(level);
+        
+        return imagesEyes;
     }
     
     public static synchronized BatchInfo getSharedBatch() {

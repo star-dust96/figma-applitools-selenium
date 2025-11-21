@@ -7,9 +7,10 @@ import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-public class ExcelDataProviderMain {
+public class ExcelDataProvider {
     
     public static Object[][] getTestData() {
+    	
         System.out.println("=".repeat(60));
         System.out.println("🔍 Reading Excel Test Data...");
         System.out.println("=".repeat(60));

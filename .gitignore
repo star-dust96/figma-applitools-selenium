@@ -1,83 +1,37 @@
-# ==========================================
-# Maven
-# ==========================================
+# Build files
 target/
-pom.xml.tag
-pom.xml.releaseBackup
-pom.xml.versionsBackup
-pom.xml.next
-release.properties
-dependency-reduced-pom.xml
-buildNumber.properties
-.mvn/timing.properties
-.mvn/wrapper/maven-wrapper.jar
-
-# ==========================================
-# Compiled Files
-# ==========================================
 *.class
-*.jar
-*.war
-*.ear
 
-# ==========================================
-# Logs
-# ==========================================
-*.log
-logs/
-applitools-logs/
-
-# ==========================================
-# Test Reports
-# ==========================================
-reports/
-test-output/
-ExtentReports/
-
-# ==========================================
-# IDE Files
-# ==========================================
+# IDE files
 .idea/
 *.iml
 .vscode/
 .settings/
-.classpath
 .project
-*.swp
-*.swo
-*~
+.classpath
 
-# ==========================================
-# OS Files
-# ==========================================
+# Environment variables (IMPORTANT - Contains API keys!)
+.env
+*.env
+
+# Log files
+*.log
+applitools-logs/
+
+# OS files
 .DS_Store
 Thumbs.db
-desktop.ini
 
-# ==========================================
-# Selenium
-# ==========================================
-chromedriver.exe
-chromedriver
-geckodriver
-geckodriver.exe
-
-# ==========================================
-# Temporary Files
-# ==========================================
-*.tmp
-*.temp
+# Test reports
+test-output/
+surefire-reports/
 screenshots/
-temp/
 
-# ==========================================
-# SENSITIVE - Do NOT commit these!
-# ==========================================
-# config.properties files contain API keys
-# We'll create a template instead
+# Temporary files
+*.tmp
+*.bak
+*~
+# Configuration files with API keys - DO NOT COMMIT!
 src/main/resources/config.properties
 src/test/resources/config.properties
-
-# Backup files
-*.bak
-*.backup
+config.properties

@@ -1,9 +1,11 @@
 package com.bajajfinserv.tests;
 
+import com.applitools.eyes.BatchInfo;
+import com.applitools.eyes.TestResults;
+import com.applitools.eyes.visualgrid.services.VisualGridRunner;
 import com.bajajfinserv.utils.*;
 import com.applitools.eyes.RectangleSize;
 import com.applitools.eyes.selenium.Eyes;
-import com.applitools.eyes.selenium.StitchMode;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
@@ -11,6 +13,7 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.annotations.*;
+
 import java.time.Duration;
 import java.awt.image.BufferedImage;
 import java.awt.*;
@@ -19,7 +22,6 @@ import java.util.List;
 public class FigmaComparisonTest extends BaseTest {
 
     protected WebDriver driver;
-    protected Eyes eyes;
     protected JavascriptExecutor js;
     protected WebDriverWait wait;
     protected String currentTestName;
@@ -28,68 +30,61 @@ public class FigmaComparisonTest extends BaseTest {
 
     @Test(dataProvider = "excelData", dataProviderClass = ExcelDataProviderMain.class)
     public void compareFigmaWithWebsite(
-        String testName,
-        String figmaUrl,
-        String appUrl,
-        String viewport,
-        String matchLevel,
-        String uploadBaseline,
-        List<ExcelDataProviderMain.TestStep> testSteps
+            String testName,
+            String figmaUrl,
+            String appUrl,
+            String viewport,
+            String matchLevel,
+            String uploadBaseline,
+            List<ExcelDataProviderMain.TestStep> testSteps
     ) {
         this.currentTestName = testName;
-        
+
         System.out.println("\n" + "=".repeat(80));
         System.out.println("🧪 TEST: " + testName);
         System.out.println("=".repeat(80));
 
-        try {
-            String[] viewportDims = viewport.split("x");
-            viewportWidth = Integer.parseInt(viewportDims[0]);
-            viewportHeight = Integer.parseInt(viewportDims[1]);
+        String[] viewportDims = viewport.split("x");
+        viewportWidth = Integer.parseInt(viewportDims[0]);
+        viewportHeight = Integer.parseInt(viewportDims[1]);
 
-            initializeTest(testName, viewportWidth, viewportHeight, matchLevel, uploadBaseline);
-
-            if ("TRUE".equalsIgnoreCase(uploadBaseline)) {
-                System.out.println("\n📸 PHASE 1: Creating Figma Baseline\n");
-                uploadFigmaBaseline(testName, figmaUrl);
-            } else {
-                System.out.println("\n⏭️  PHASE 2: Skipping Figma upload - comparing against existing baseline\n");
-            }
-
-            navigateToUrl(appUrl);
-
-            if (testSteps != null && !testSteps.isEmpty()) {
-                System.out.println("\n📋 EXECUTING " + testSteps.size() + " TEST STEPS");
-                System.out.println("-".repeat(80));
-                
-                for (ExcelDataProviderMain.TestStep step : testSteps) {
-                    executeStep(step);
-                }
-                
-                System.out.println("-".repeat(80));
-            } else {
-                System.out.println("\n📋 NO TEST STEPS - CAPTURING FULL PAGE");
-                sleep(3000);
-                removeStickyHeaders();
-                captureFullPage(testName);
-            }
-
-            finalizeTest();
-            System.out.println("✅ Test completed!");
-
-        } catch (Exception e) {
-            System.err.println("\n❌ TEST FAILED: " + e.getMessage());
-            e.printStackTrace();
-            try { eyes.abortIfNotClosed(); } catch (Exception ex) {}
-            throw new RuntimeException(e);
-        } finally {
-            cleanup();
+        if ("TRUE".equalsIgnoreCase(uploadBaseline)) {
+            System.out.println("\n📸 PHASE 1: Creating Figma Baseline\n");
+            uploadFigmaBaseline(testName, figmaUrl, matchLevel);
+        } else {
+            System.out.println("\n⏭️  PHASE 2: Skipping Figma upload - comparing against existing baseline\n");
         }
 
+        compareFigmaWithApplicationInBrowser(testName, appUrl, matchLevel, uploadBaseline, testSteps);
+        System.out.println("✅ Test '" + testName + "' completed!");
         System.out.println("=".repeat(80) + "\n");
     }
 
-    protected void executeStep(ExcelDataProviderMain.TestStep step) {
+    private void compareFigmaWithApplicationInBrowser(String testName, String appUrl, String matchLevel, String uploadBaseline, List<ExcelDataProviderMain.TestStep> testSteps) {
+        Eyes seleniumEyes;
+        seleniumEyes = initializeTest(testName, viewportWidth, viewportHeight, matchLevel, uploadBaseline);
+
+        navigateToUrl(appUrl);
+        if (testSteps != null && !testSteps.isEmpty()) {
+            System.out.println("\n📋 EXECUTING " + testSteps.size() + " TEST STEPS");
+            System.out.println("-".repeat(80));
+
+            for (ExcelDataProviderMain.TestStep step : testSteps) {
+                executeStep(step, seleniumEyes);
+            }
+
+            System.out.println("-".repeat(80));
+        } else {
+            System.out.println("\n📋 NO TEST STEPS - CAPTURING FULL PAGE");
+            sleep(3000);
+            removeStickyHeaders();
+            captureFullPage(testName, seleniumEyes);
+        }
+
+        finalizeTest(seleniumEyes, sharedRunnerForEyes, sharedBatchForEyes);
+    }
+
+    protected void executeStep(ExcelDataProviderMain.TestStep step, Eyes seleniumEyes) {
         if (step == null || step.action == null || step.action.trim().isEmpty()) {
             System.out.println("   ⚠️  Skipping empty step");
             return;
@@ -104,7 +99,7 @@ public class FigmaComparisonTest extends BaseTest {
                 case "NAVIGATE":
                     System.out.println("   ✓ Already navigated");
                     break;
-                    
+
                 case "WAIT":
                     if (step.waitSeconds != null && !step.waitSeconds.isEmpty()) {
                         int seconds = Integer.parseInt(step.waitSeconds);
@@ -122,15 +117,15 @@ public class FigmaComparisonTest extends BaseTest {
                     break;
 
                 case "CAPTUREFULLPAGE":
-                    String fullPageName = (step.checkpointName != null && !step.checkpointName.isEmpty()) 
-                        ? step.checkpointName : this.currentTestName;
-                    captureFullPage(fullPageName);
+                    String fullPageName = (step.checkpointName != null && !step.checkpointName.isEmpty())
+                                          ? step.checkpointName : this.currentTestName;
+                    captureFullPage(fullPageName, seleniumEyes);
                     break;
 
                 case "CAPTURECOMPONENT":
-                    String componentName = (step.checkpointName != null && !step.checkpointName.isEmpty()) 
-                        ? step.checkpointName : "Component";
-                    captureComponent(step.locator, componentName);
+                    String componentName = (step.checkpointName != null && !step.checkpointName.isEmpty())
+                                           ? step.checkpointName : "Component";
+                    captureComponent(step.locator, componentName, seleniumEyes);
                     break;
 
                 case "SCROLL":
@@ -162,31 +157,29 @@ public class FigmaComparisonTest extends BaseTest {
         }
     }
 
-    protected void initializeTest(String testName, int width, int height, String matchLevel, String uploadBaseline) {
+    protected Eyes initializeTest(String testName, int width, int height, String matchLevel, String uploadBaseline) {
         System.out.println("\n🚀 INITIALIZING TEST");
         System.out.println("   Test Name: " + testName);
         System.out.println("   Viewport: " + width + "x" + height);
 
-        eyes = ApplitoolsManager.getEyes(matchLevel, uploadBaseline, getSharedBatch());
-        eyes.setStitchMode(StitchMode.CSS);
-        eyes.setForceFullPageScreenshot(true);
-        eyes.setHideScrollbars(true);
+        Eyes seleniumEyes = ApplitoolsManager.getSeleniumEyes(testName, matchLevel, uploadBaseline, sharedBatchForEyes, sharedRunnerForEyes);
 
         driver = DriverManager.getDriver(width, height);
         js = (JavascriptExecutor) driver;
         wait = new WebDriverWait(driver, Duration.ofSeconds(30));
 
-        eyes.open(driver, "Figma Visual Testing", testName, new RectangleSize(width, height));
+        seleniumEyes.open(driver, "Figma Visual Testing", testName, new RectangleSize(width, height));
 
         System.out.println("✅ Test initialized successfully");
+        return seleniumEyes;
     }
 
-    protected void uploadFigmaBaseline(String testName, String figmaUrl) throws Exception {
+    protected void uploadFigmaBaseline(String testName, String figmaUrl, String matchLevel) {
         System.out.println("\n📸 UPLOADING FIGMA BASELINE");
 
         BufferedImage figmaImage = FigmaAPIClient.getFigmaComponentImage(figmaUrl);
         if (figmaImage == null) {
-            throw new Exception("Failed to fetch Figma image");
+            throw new RuntimeException("Failed to fetch Figma image");
         }
 
         System.out.println("   Original Figma: " + figmaImage.getWidth() + "x" + figmaImage.getHeight() + " pixels");
@@ -198,44 +191,61 @@ public class FigmaComparisonTest extends BaseTest {
         }
 
         com.applitools.eyes.images.Eyes imagesEyes = null;
-        
+
         try {
             System.out.println("   🔧 Creating Images Eyes instance for Figma upload...");
-            String matchLevel = eyes.getConfiguration().getMatchLevel().toString();
-            imagesEyes = ApplitoolsManager.getImagesEyes(matchLevel, getSharedBatch());
-            
+            imagesEyes = ApplitoolsManager.getImagesEyes(matchLevel, sharedBatchForFigma);
+
             System.out.println("   🔑 Setting baselineEnvName: " + testName);
             imagesEyes.setBaselineEnvName(testName);
-            
+
             System.out.println("   📂 Opening Images Eyes session...");
-            imagesEyes.open("Figma Visual Testing", testName, 
+            imagesEyes.open("Figma Visual Testing", testName,
                             new com.applitools.eyes.RectangleSize(figmaImage.getWidth(), figmaImage.getHeight()));
-            
+
             System.out.println("   📤 Uploading Figma image directly to Applitools...");
             imagesEyes.checkImage(figmaImage, testName);
-            
+
+        } finally {
             System.out.println("   🔒 Closing Images Eyes session (uploading)...");
-            imagesEyes.close(false);
-            
+            TestResults testResults = imagesEyes.close(false);
+            System.out.println("   ✅ Figma image uploaded. Test Results:");
+            displayVisualValidationResults(testResults);
+
             System.out.println("✅ Figma baseline uploaded successfully!");
-            
-        } catch (Exception e) {
-            System.err.println("❌ Failed to upload Figma image: " + e.getMessage());
-            e.printStackTrace();
-            if (imagesEyes != null) {
-                try { imagesEyes.abortIfNotClosed(); } catch (Exception ex) {}
-            }
-            throw e;
         }
+    }
+
+    private void displayVisualValidationResults(TestResults result) {
+        boolean hasMismatches = false;
+        System.out.println(result);
+        System.out.println("\tTest Name: " + result.getName() + " :: " + result);
+        System.out.println("\tTest status: " + result.getStatus());
+        System.out.printf("\t\tName = '%s', %nBrowser = %s,OS = %s, viewport = %dx%d, matched = %d, mismatched = %d, missing = %d, aborted = %s%n",
+                          result.getName(),
+                          result.getHostApp(),
+                          result.getHostOS(),
+                          result.getHostDisplaySize().getWidth(),
+                          result.getHostDisplaySize().getHeight(),
+                          result.getMatches(),
+                          result.getMismatches(),
+                          result.getMissing(),
+                          (result.isAborted() ? "aborted" : "no"));
+        if (null != result.getAccessibilityStatus()) {
+            System.out.println("Accessibility status: " + result.getAccessibilityStatus().getStatus());
+        }
+        System.out.println("Results available here: " + result.getUrl());
+        hasMismatches = result.getMismatches() != 0 || result.isAborted();
+        System.out.println("Visual validation failed? - " + hasMismatches);
     }
 
     protected BufferedImage resizeImageWidth(BufferedImage original, int targetWidth) {
         int originalWidth = original.getWidth();
         int originalHeight = original.getHeight();
         int targetHeight = (int) ((double) originalHeight * targetWidth / originalWidth);
-        
+
         System.out.println("   📐 Maintaining aspect ratio: " + targetWidth + "x" + targetHeight);
-        
+
         BufferedImage resized = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = resized.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
@@ -257,11 +267,11 @@ public class FigmaComparisonTest extends BaseTest {
 
     protected void removeStickyHeaders() {
         js.executeScript(
-            "var style = document.createElement('style');" +
-            "style.innerHTML = 'header, nav, [class*=\"sticky\"], [class*=\"fixed\"], " +
-            "[style*=\"position: fixed\"], [style*=\"position: sticky\"] " +
-            "{ position: relative !important; }';" +
-            "document.head.appendChild(style);"
+                "var style = document.createElement('style');" +
+                "style.innerHTML = 'header, nav, [class*=\"sticky\"], [class*=\"fixed\"], " +
+                "[style*=\"position: fixed\"], [style*=\"position: sticky\"] " +
+                "{ position: relative !important; }';" +
+                "document.head.appendChild(style);"
         );
         sleep(500);
     }
@@ -283,32 +293,30 @@ public class FigmaComparisonTest extends BaseTest {
         element.sendKeys(text);
     }
 
-    protected void captureFullPage(String checkpointName) {
+    protected void captureFullPage(String checkpointName, Eyes seleniumEyes) {
         System.out.println("   📸 Capturing full page: " + checkpointName);
-        
+
         System.out.println("   🔑 Setting baselineEnvName: " + this.currentTestName);
-        eyes.setBaselineEnvName(this.currentTestName);
-        
-        eyes.checkWindow(checkpointName);
+
+        seleniumEyes.checkWindow(checkpointName);
         System.out.println("   ✓ Full page captured");
     }
 
-    protected void captureComponent(String locator, String checkpointName) {
+    protected void captureComponent(String locator, String checkpointName, Eyes seleniumEyes) {
         System.out.println("   📸 Capturing component: " + checkpointName);
         System.out.println("   🔍 Locator: " + locator);
-        
+
         try {
             System.out.println("   🔑 Setting baselineEnvName: " + this.currentTestName);
-            eyes.setBaselineEnvName(this.currentTestName);
-            
+
             By by = getLocator(locator);
             WebElement element = wait.until(ExpectedConditions.presenceOfElementLocated(by));
             js.executeScript("arguments[0].scrollIntoView({block: 'center'});", element);
             sleep(1000);
-            
-            eyes.checkRegion(by, checkpointName);
+
+            seleniumEyes.checkRegion(by, checkpointName);
             System.out.println("   ✓ Component captured");
-            
+
         } catch (Exception e) {
             System.err.println("   ❌ Component capture failed: " + e.getMessage());
             e.printStackTrace();
@@ -331,30 +339,38 @@ public class FigmaComparisonTest extends BaseTest {
         }
     }
 
-    protected void finalizeTest() {
+    protected void finalizeTest(Eyes seleniumEyes, VisualGridRunner runner, BatchInfo sharedBatch) {
         System.out.println("\n✅ FINALIZING TEST");
         try {
-            eyes.close(false);
+            seleniumEyes.closeAsync();
             System.out.println("   ✅ Test uploaded successfully!");
         } catch (Exception e) {
             System.err.println("   ⚠️  Error during upload: " + e.getMessage());
-            try { eyes.abortAsync(); } catch (Exception ex) {}
+            try {
+                seleniumEyes.abortAsync();
+            } catch (Exception ex) {
+            }
         }
     }
 
+    @AfterMethod
     protected void cleanup() {
         System.out.println("\n🧹 CLEANUP");
         if (driver != null) {
             try {
                 driver.quit();
                 System.out.println("✓ Browser closed");
-            } catch (Exception e) {}
+            } catch (Exception e) {
+            }
         }
         System.out.println("=".repeat(80) + "\n");
     }
 
     protected void sleep(int milliseconds) {
-        try { Thread.sleep(milliseconds); } 
-        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        try {
+            Thread.sleep(milliseconds);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

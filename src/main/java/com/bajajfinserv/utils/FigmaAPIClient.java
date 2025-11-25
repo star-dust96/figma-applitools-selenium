@@ -12,6 +12,8 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.net.URL;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,8 +29,20 @@ public class FigmaAPIClient {
         );
     }
 
+    // Retry config
     private static final int MAX_RETRIES = 5;
     private static final long BASE_BACKOFF_MS = 1000L; // 1s, 2s, 4s, 8s, 16s...
+    private static final int MAX_RETRY_AFTER_SECONDS = 120; // hard cap for Retry-After usage
+
+    // Simple global throttle so we don't hammer Figma too fast
+    private static final Object RATE_LIMIT_LOCK = new Object();
+    private static long nextAllowedTimeMs = 0L;
+    private static final long MIN_INTERVAL_BETWEEN_CALLS_MS = 1200L; // ~1.2s => ~50 calls/min
+
+    // Cache for (fileKey|nodeId) -> image URL
+    private static final Map<String, String> IMAGE_URL_CACHE = new ConcurrentHashMap<>();
+
+    // --- Public API (with retry & backoff) ---
 
     public static BufferedImage getFigmaComponentImage(String figmaUrl) {
         System.out.println("🔗 Figma URL: " + figmaUrl);
@@ -53,15 +67,13 @@ public class FigmaAPIClient {
 
         while (true) {
             try {
-                // 1) Get image URL from Figma (this is where 429 usually happens)
                 String imageUrl = getImageUrl(nodeData.fileKey, nodeData.nodeId, apiToken);
                 if (imageUrl == null || imageUrl.isEmpty()) {
                     throw new RuntimeException("❌ Failed to get image URL from Figma API");
                 }
 
-                System.out.println("🖼️ Image URL obtained");
+                System.out.println("🖼️ Image URL obtained: " + imageUrl);
 
-                // 2) Download image
                 BufferedImage image = ImageIO.read(new URL(imageUrl));
                 if (image == null) {
                     throw new IOException("❌ ImageIO.read returned null for downloaded image");
@@ -69,51 +81,45 @@ public class FigmaAPIClient {
 
                 return image; // ✅ success
 
-            } catch (Exception e) {
-                // Check if this looks like a Figma rate-limit error (429)
-                if (isRateLimitError(e) && retries < MAX_RETRIES) {
-                    long waitMs = (long) Math.pow(2, retries) * BASE_BACKOFF_MS;
-                    System.out.println("⚠️ Rate limit hit (429). Retry " + (retries + 1)
-                                       + " of " + MAX_RETRIES + " – waiting " + (waitMs / 1000) + " seconds...");
-                    retries++;
-
-                    try {
-                        Thread.sleep(waitMs);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("Retry interrupted while waiting after rate limit.", ie);
-                    }
-
-                    // loop again
-                    continue;
-                } else {
-
-                    // Not a rate limit issue OR retries exhausted → fail fast
-                    throw new RuntimeException("❌ Failed to download image from Figma", e);
+            } catch (FigmaRateLimitException e) {
+                if (retries >= MAX_RETRIES) {
+                    throw new RuntimeException("❌ Failed due to repeated Figma rate limit errors.", e);
                 }
+
+                retries++;
+
+                long waitMs;
+
+                int retryAfterSeconds = e.getRetryAfterSeconds();
+                // 👇 Only trust Retry-After if it's >0 AND reasonably small (e.g. <= 120 seconds)
+                if (retryAfterSeconds > 0 && retryAfterSeconds <= MAX_RETRY_AFTER_SECONDS) {
+                    waitMs = retryAfterSeconds * 1000L;
+                    System.out.println("⚠️ Rate limit hit. Using Retry-After header: "
+                                       + retryAfterSeconds + "s");
+                } else {
+                    // Fallback to exponential backoff if header is missing or looks insane
+                    waitMs = (long) Math.pow(2, retries - 1) * BASE_BACKOFF_MS;
+                    System.out.println("⚠️ Rate limit hit. Ignoring Retry-After ("
+                                       + retryAfterSeconds + "s). Using exponential backoff.");
+                }
+
+                System.out.println("⏳ Retry " + retries + " of " + MAX_RETRIES
+                                   + " – waiting " + (waitMs / 1000) + " seconds...");
+
+                try {
+                    Thread.sleep(waitMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Retry interrupted while waiting after rate limit.", ie);
+                }
+
+            } catch (Exception e) {
+                throw new RuntimeException("❌ Failed to download image from Figma", e);
             }
         }
     }
 
-    /**
-     * Best-effort detection of Figma 429 "Rate limit exceeded" errors.
-     * Works whether the error is coming from your HTTP layer or bubbled up as text.
-     */
-    private static boolean isRateLimitError(Exception e) {
-        if (e == null) {
-            return false;
-        }
-        String msg = e.getMessage();
-        if (msg == null) {
-            return false;
-        }
-
-        // Match common patterns from Figma:
-        // e.g. "Response: {"status":429,"err":"Rate limit exceeded"}"
-        return msg.contains("429")
-               || msg.toLowerCase().contains("rate limit")
-               || msg.toLowerCase().contains("rate-limit");
-    }
+    // --- Old variant without retry (unchanged, if you still want it) ---
 
     public static BufferedImage getFigmaComponentImage_dnd(String figmaUrl) {
         System.out.println("🔗 Figma URL: " + figmaUrl);
@@ -136,12 +142,11 @@ public class FigmaAPIClient {
             throw new RuntimeException("❌ Failed to get image URL from Figma API");
         }
 
-        System.out.println("🖼️ Image URL obtained");
+        System.out.println("🖼️ Image URL obtained: " + imageUrl);
 
-        // Disable SSL verification for image download too
         System.setProperty("jdk.internal.httpclient.disableHostnameVerification", "true");
 
-        BufferedImage image = null;
+        BufferedImage image;
         try {
             image = ImageIO.read(new URL(imageUrl));
         } catch (IOException e) {
@@ -153,6 +158,8 @@ public class FigmaAPIClient {
 
         return image;
     }
+
+    // --- Core helpers ---
 
     private static FigmaNodeData parseFigmaUrl(String figmaUrl) {
         Pattern pattern = Pattern.compile("figma\\.com/design/([^/]+)/[^?]*\\?node-id=([^&]+)");
@@ -176,40 +183,99 @@ public class FigmaAPIClient {
         return null;
     }
 
+    /**
+     * Get image URL for a single node.
+     * Includes:
+     *  - global throttling
+     *  - caching
+     *  - explicit 429 handling with optional Retry-After
+     */
     private static String getImageUrl(String fileKey, String nodeId, String apiToken) {
+        String cacheKey = fileKey + "|" + nodeId;
+        String cachedUrl = IMAGE_URL_CACHE.get(cacheKey);
+        if (cachedUrl != null && !cachedUrl.isEmpty()) {
+            System.out.println("💾 Using cached image URL");
+            return cachedUrl;
+        }
+
+        throttleFigmaCall();
+
         String endpoint = FIGMA_API_BASE + "/images/" + fileKey;
 
         Response response = RestAssured.given()
-                .relaxedHTTPSValidation() // Additional SSL bypass
+                .relaxedHTTPSValidation()
                 .header("X-Figma-Token", apiToken)
                 .queryParam("ids", nodeId)
                 .queryParam("format", "png")
                 .queryParam("scale", "2")
                 .get(endpoint);
 
-        System.out.println("📡 Figma API Response Code: " + response.getStatusCode());
+        int statusCode = response.getStatusCode();
+        System.out.println("📡 Figma API Response Code: " + statusCode);
 
-        if (response.getStatusCode() != 200) {
-            System.err.println("❌ Figma API error: " + response.getStatusCode());
-            System.err.println("Response: " + response.getBody().asString());
-            throw new RuntimeException("Figma API returned non-200 status: " + response.getStatusCode() + ". Body: " + response.getBody().asString());
+        if (statusCode == 429) {
+            String retryAfterHeader = response.getHeader("Retry-After");
+            int retryAfterSeconds = 0;
+            try {
+                if (retryAfterHeader != null) {
+                    retryAfterSeconds = Integer.parseInt(retryAfterHeader.trim());
+                }
+            } catch (NumberFormatException ignored) {
+                // If it's a date or something weird, we'll just leave it as 0
+            }
+
+            System.err.println("❌ Figma rate limit hit. Raw Retry-After header: " + retryAfterHeader);
+            throw new FigmaRateLimitException("Figma rate limit exceeded", retryAfterSeconds);
         }
 
-        JsonNode root = null;
+        if (statusCode != 200) {
+            String body = response.getBody().asString();
+            System.err.println("❌ Figma API error: " + statusCode);
+            System.err.println("Response: " + body);
+            throw new RuntimeException("Figma API returned non-200 status: " + statusCode + ". Body: " + body);
+        }
+
+        JsonNode root;
         try {
             root = objectMapper.readTree(response.getBody().asString());
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }
-        JsonNode imagesNode = root.get("images");
 
+        JsonNode imagesNode = root.get("images");
         if (imagesNode != null && imagesNode.has(nodeId)) {
-            return imagesNode.get(nodeId).asText();
+            String url = imagesNode.get(nodeId).asText();
+            if (url != null && !url.isEmpty()) {
+                IMAGE_URL_CACHE.put(cacheKey, url);
+            }
+            return url;
         }
 
         System.err.println("❌ Image URL not found in response");
         throw new RuntimeException("Image URL not found in Figma API response");
     }
+
+    /**
+     * Simple global throttle: ensures at least MIN_INTERVAL_BETWEEN_CALLS_MS
+     * between Figma API calls across all threads.
+     */
+    private static void throttleFigmaCall() {
+        synchronized (RATE_LIMIT_LOCK) {
+            long now = System.currentTimeMillis();
+            if (now < nextAllowedTimeMs) {
+                long sleepMs = nextAllowedTimeMs - now;
+                try {
+                    System.out.println("⏳ Throttling Figma call, sleeping for " + sleepMs + " ms");
+                    Thread.sleep(sleepMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            nextAllowedTimeMs = System.currentTimeMillis() + MIN_INTERVAL_BETWEEN_CALLS_MS;
+        }
+    }
+
+    // --- Helper types ---
 
     private static class FigmaNodeData {
         String fileKey;
@@ -218,6 +284,19 @@ public class FigmaAPIClient {
         FigmaNodeData(String fileKey, String nodeId) {
             this.fileKey = fileKey;
             this.nodeId = nodeId;
+        }
+    }
+
+    public static class FigmaRateLimitException extends RuntimeException {
+        private final int retryAfterSeconds;
+
+        public FigmaRateLimitException(String message, int retryAfterSeconds) {
+            super(message);
+            this.retryAfterSeconds = retryAfterSeconds;
+        }
+
+        public int getRetryAfterSeconds() {
+            return retryAfterSeconds;
         }
     }
 }
